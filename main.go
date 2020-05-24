@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Greyh4t/hackpool"
 	"github.com/grafov/m3u8"
+	"github.com/greyh4t/hackpool"
 )
 
 var (
@@ -46,7 +46,7 @@ func init() {
 	flag.IntVar(&conf.ThreadNum, "n", 10, "Thread number")
 	flag.StringVar(&conf.OutFile, "o", "", "Out file")
 	flag.IntVar(&conf.Retry, "r", 3, "Number of retries")
-	flag.DurationVar(&conf.Timeout, "t", time.Second*10, "Timeout")
+	flag.DurationVar(&conf.Timeout, "t", time.Second*30, "Timeout")
 	flag.StringVar(&conf.Proxy, "p", "", "Proxy\nExample: http://127.0.0.1:8080")
 	header := flag.String("H", "", "HTTP Headers\nExample: Referer=http://www.example.com;UserAgent=Mozilla/5.0")
 
@@ -131,10 +131,9 @@ func parseM3u8(m3u8Url string) (*m3u8.MediaPlaylist, error) {
 			mpl.Key.URI = uri
 		}
 
-		for _, segment := range mpl.Segments {
-			if segment == nil {
-				continue
-			}
+		count := int(mpl.Count())
+		for i := 0; i < count; i++ {
+			segment := mpl.Segments[i]
 
 			uri, err := formatURI(obj, segment.URI)
 			if err != nil {
@@ -143,12 +142,14 @@ func parseM3u8(m3u8Url string) (*m3u8.MediaPlaylist, error) {
 			segment.URI = uri
 
 			if segment.Key != nil && segment.Key.URI != "" {
-				uri, err := formatURI(obj, segment.URI)
+				uri, err := formatURI(obj, segment.Key.URI)
 				if err != nil {
 					return nil, err
 				}
-				segment.URI = uri
+				segment.Key.URI = uri
 			}
+
+			mpl.Segments[i] = segment
 		}
 
 		return mpl, nil
