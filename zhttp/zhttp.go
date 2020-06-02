@@ -26,7 +26,7 @@ func New(timeout time.Duration, proxy string) (*Zhttp, error) {
 			return nil, err
 		}
 
-		t := &http.Transport{}
+		t := http.DefaultTransport.(*http.Transport).Clone()
 		t.Proxy = func(*http.Request) (*url.URL, error) {
 			return p, nil
 		}
@@ -41,6 +41,8 @@ func (zhttp *Zhttp) Get(url string, headers map[string]string, retry int) (int, 
 	if err != nil {
 		return 0, nil, err
 	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 Safari/537.36")
 
 	for k, v := range headers {
 		req.Header.Set(k, v)
