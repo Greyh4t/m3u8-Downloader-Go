@@ -19,7 +19,7 @@ Usage of m3u8-Downloader-Go:
   -r int
         Number of retries (default 3)
   -t duration
-        Timeout (default 10s)
+        Timeout (default 30s)
   -u string
         URL of m3u8
 ```
