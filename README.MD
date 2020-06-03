@@ -1,5 +1,5 @@
 # m3u8-Downloader-Go
-Download m3u8 to with multithreading, support decrypt
+Download m3u8 media with multithreading, support decrypt
 
 # How to use
 ```
