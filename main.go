@@ -31,7 +31,7 @@ var (
 )
 
 type Conf struct {
-	Url       string
+	URL       string
 	ThreadNum int
 	OutFile   string
 	Retry     int
@@ -42,7 +42,7 @@ type Conf struct {
 func init() {
 	conf = &Conf{}
 
-	flag.StringVar(&conf.Url, "u", "", "URL of m3u8")
+	flag.StringVar(&conf.URL, "u", "", "URL of m3u8")
 	flag.IntVar(&conf.ThreadNum, "n", 10, "Thread number")
 	flag.StringVar(&conf.OutFile, "o", "", "Out file")
 	flag.IntVar(&conf.Retry, "r", 3, "Number of retries")
@@ -71,7 +71,7 @@ func init() {
 }
 
 func checkConf() {
-	if conf.Url == "" {
+	if conf.URL == "" {
 		flag.Usage()
 		os.Exit(0)
 		return
@@ -86,7 +86,7 @@ func checkConf() {
 	}
 
 	if conf.Timeout <= 0 {
-		conf.Timeout = time.Second * 10
+		conf.Timeout = time.Second * 30
 	}
 }
 
@@ -196,20 +196,20 @@ func download(in interface{}) {
 		log.Fatalln("[-] Download failed: body is empty, http code:", statusCode)
 	}
 
-	var keyUrl, ivStr string
+	var keyURL, ivStr string
 	if segment.Key != nil && segment.Key.URI != "" {
-		keyUrl = segment.Key.URI
+		keyURL = segment.Key.URI
 		ivStr = segment.Key.IV
 	} else if globalKey != nil && globalKey.URI != "" {
-		keyUrl = globalKey.URI
+		keyURL = globalKey.URI
 		ivStr = globalKey.IV
 	}
 
-	if keyUrl != "" {
+	if keyURL != "" {
 		var key, iv []byte
-		key, err = getKey(keyUrl)
+		key, err = getKey(keyURL)
 		if err != nil {
-			log.Fatalln("[-] Download key failed:", keyUrl, err)
+			log.Fatalln("[-] Download key failed:", keyURL, err)
 		}
 
 		if ivStr != "" {
@@ -258,7 +258,7 @@ func main() {
 		log.Fatalln("[-] Init failed:", err)
 	}
 
-	mpl, err := parseM3u8(conf.Url)
+	mpl, err := parseM3u8(conf.URL)
 	if err != nil {
 		log.Fatalln("[-] Parse m3u8 file failed:", err)
 	} else {
