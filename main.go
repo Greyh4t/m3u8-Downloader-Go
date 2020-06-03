@@ -110,11 +110,7 @@ func parseM3u8(m3u8Url string) (*m3u8.MediaPlaylist, error) {
 		return nil, err
 	}
 
-	if len(data) == 0 {
-		return nil, errors.New("body is empty, http code: " + strconv.Itoa(statusCode))
-	}
-
-	if statusCode/100 != 2 {
+	if statusCode/100 != 2 || len(data) == 0 {
 		return nil, errors.New("download m3u8 file failed, http code: " + strconv.Itoa(statusCode))
 	}
 
