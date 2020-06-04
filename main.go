@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
-	"flag"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"m3u8-Downloader-Go/decrypter"
 	"m3u8-Downloader-Go/joiner"
 	"m3u8-Downloader-Go/zhttp"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,62 +19,55 @@ import (
 
 	"github.com/grafov/m3u8"
 	"github.com/greyh4t/hackpool"
+	"github.com/guonaihong/clop"
 )
 
 var (
 	ZHTTP        *zhttp.Zhttp
 	JOINER       *joiner.Joiner
 	conf         *Conf
-	keyCache     map[string][]byte
+	keyCache     = map[string][]byte{}
 	keyCacheLock sync.Mutex
 	headers      map[string]string
 )
 
 type Conf struct {
-	URL       string
-	ThreadNum int
-	OutFile   string
-	Retry     int
-	Timeout   time.Duration
-	Proxy     string
+	URL       string        `clop:"-u; --url" usage:"url of m3u8 file"`
+	File      string        `clop:"-f; --m3u8-file" usage:"local m3u8 file"`
+	ThreadNum int           `clop:"-n; --thread-number" usage:"thread number" default:"10"`
+	OutFile   string        `clop:"-o; --out-file" usage:"out file"`
+	Retry     int           `clop:"-r; --retry" usage:"number of retries" default:"3"`
+	Timeout   time.Duration `clop:"-t; --timeout" usage:"timeout" default:"30s"`
+	Proxy     string        `clop:"-p; --proxy" usage:"proxy. Example: http://127.0.0.1:8080"`
+	Headers   []string      `clop:"-H; --header; greedy" usage:"http header. Example: Referer:http://www.example.com"`
+	headers   map[string]string
 }
 
 func init() {
 	conf = &Conf{}
-
-	flag.StringVar(&conf.URL, "u", "", "URL of m3u8")
-	flag.IntVar(&conf.ThreadNum, "n", 10, "Thread number")
-	flag.StringVar(&conf.OutFile, "o", "", "Out file")
-	flag.IntVar(&conf.Retry, "r", 3, "Number of retries")
-	flag.DurationVar(&conf.Timeout, "t", time.Second*30, "Timeout")
-	flag.StringVar(&conf.Proxy, "p", "", "Proxy\nExample: http://127.0.0.1:8080")
-	header := flag.String("H", "", "HTTP Headers\nExample: Referer=http://www.example.com;UserAgent=Mozilla/5.0")
-
-	flag.Parse()
+	clop.CommandLine.SetExit(true)
+	clop.Bind(&conf)
 
 	checkConf()
 
-	keyCache = map[string][]byte{}
-	headers = map[string]string{}
-
-	if *header != "" {
-		lines := strings.Split(*header, ";")
-		for _, line := range lines {
-			s := strings.SplitN(line, "=", 2)
+	if len(conf.Headers) > 0 {
+		conf.headers = map[string]string{}
+		for _, header := range conf.Headers {
+			s := strings.SplitN(header, ":", 2)
+			key := strings.TrimRight(s[0], " ")
 			if len(s) == 2 {
-				headers[s[0]] = s[1]
+				conf.headers[key] = strings.TrimLeft(s[1], " ")
 			} else {
-				headers[s[0]] = ""
+				conf.headers[key] = ""
 			}
 		}
 	}
 }
 
 func checkConf() {
-	if conf.URL == "" {
-		flag.Usage()
-		os.Exit(0)
-		return
+	if conf.URL == "" && conf.File == "" {
+		fmt.Println("You must set the -u or -f parameter")
+		clop.Usage()
 	}
 
 	if conf.ThreadNum <= 0 {
@@ -104,23 +97,34 @@ func start(mpl *m3u8.MediaPlaylist) {
 	go pool.Run()
 }
 
-func parseM3u8(m3u8Url string) (*m3u8.MediaPlaylist, error) {
-	statusCode, data, err := ZHTTP.Get(m3u8Url, headers, conf.Retry)
+func downloadM3u8(m3u8URL string) ([]byte, error) {
+	statusCode, data, err := ZHTTP.Get(m3u8URL, conf.headers, conf.Retry)
 	if err != nil {
 		return nil, err
 	}
 
 	if statusCode/100 != 2 || len(data) == 0 {
-		return nil, errors.New("download m3u8 file failed, http code: " + strconv.Itoa(statusCode))
+		return nil, errors.New("http code: " + strconv.Itoa(statusCode))
 	}
 
+	return data, nil
+}
+
+func parseM3u8(data []byte) (*m3u8.MediaPlaylist, error) {
 	playlist, listType, err := m3u8.Decode(*bytes.NewBuffer(data), true)
 	if err != nil {
 		return nil, err
 	}
 
 	if listType == m3u8.MEDIA {
-		obj, _ := url.Parse(m3u8Url)
+		var obj *url.URL
+		if conf.URL != "" {
+			obj, err = url.Parse(conf.URL)
+			if err != nil {
+				return nil, errors.New("parse m3u8 url failed: " + err.Error())
+			}
+		}
+
 		mpl := playlist.(*m3u8.MediaPlaylist)
 
 		if mpl.Key != nil && mpl.Key.URI != "" {
@@ -155,7 +159,7 @@ func parseM3u8(m3u8Url string) (*m3u8.MediaPlaylist, error) {
 		return mpl, nil
 	}
 
-	return nil, errors.New("Unsupport m3u8 type")
+	return nil, errors.New("unsupport m3u8 type")
 }
 
 func getKey(url string) ([]byte, error) {
@@ -172,8 +176,8 @@ func getKey(url string) ([]byte, error) {
 		return nil, err
 	}
 
-	if len(key) == 0 {
-		return nil, errors.New("body is empty, http code: " + strconv.Itoa(statusCode))
+	if statusCode/100 != 2 || len(key) == 0 {
+		return nil, errors.New("http code: " + strconv.Itoa(statusCode))
 	}
 
 	keyCache[url] = key
@@ -192,8 +196,8 @@ func download(in interface{}) {
 		log.Fatalln("[-] Download failed:", err)
 	}
 
-	if len(data) == 0 {
-		log.Fatalln("[-] Download failed: body is empty, http code:", statusCode)
+	if statusCode/100 != 2 || len(data) == 0 {
+		log.Fatalln("[-] Download failed, http code:", statusCode)
 	}
 
 	var keyURL, ivStr string
@@ -237,6 +241,10 @@ func formatURI(base *url.URL, u string) (string, error) {
 		return u, nil
 	}
 
+	if base == nil {
+		return "", errors.New("you must set m3u8 url for " + conf.File + " to download")
+	}
+
 	obj, err := base.Parse(u)
 	if err != nil {
 		return "", err
@@ -258,7 +266,20 @@ func main() {
 		log.Fatalln("[-] Init failed:", err)
 	}
 
-	mpl, err := parseM3u8(conf.URL)
+	var data []byte
+	if conf.File != "" {
+		data, err = ioutil.ReadFile(conf.File)
+		if err != nil {
+			log.Fatalln("[-] Load m3u8 file failed:", err)
+		}
+	} else {
+		data, err = downloadM3u8(conf.URL)
+		if err != nil {
+			log.Fatalln("[-] Download m3u8 file failed:", err)
+		}
+	}
+
+	mpl, err := parseM3u8(data)
 	if err != nil {
 		log.Fatalln("[-] Parse m3u8 file failed:", err)
 	} else {
