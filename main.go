@@ -193,7 +193,7 @@ func download(in interface{}) {
 
 	statusCode, data, err := ZHTTP.Get(segment.URI, headers, conf.Retry)
 	if err != nil {
-		log.Fatalln("[-] Download failed:", err)
+		log.Fatalln("[-] Download failed:", id, err)
 	}
 
 	if statusCode/100 != 2 || len(data) == 0 {
@@ -231,7 +231,7 @@ func download(in interface{}) {
 		}
 	}
 
-	log.Println("[+] Download succed:", segment.URI)
+	log.Println("[+] Download succed:", id, segment.URI)
 
 	JOINER.Join(id, data)
 }
@@ -265,6 +265,8 @@ func main() {
 	if err != nil {
 		log.Fatalln("[-] Init failed:", err)
 	}
+
+	t := time.Now()
 
 	var data []byte
 	if conf.File != "" {
@@ -307,6 +309,6 @@ func main() {
 		if err != nil {
 			log.Fatalln("[-] Write to file failed:", err)
 		}
-		log.Println("[+] Download succed, saved to", JOINER.Name())
+		log.Println("[+] Download succed, saved to", JOINER.Name(), "cost:", time.Now().Sub(t))
 	}
 }
