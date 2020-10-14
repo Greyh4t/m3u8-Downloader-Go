@@ -14,7 +14,7 @@ type Joiner struct {
 }
 
 func New(name string) (*Joiner, error) {
-	f, err := os.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_APPEND, 0755)
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
 	}
