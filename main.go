@@ -89,7 +89,7 @@ func start(mpl *m3u8.MediaPlaylist) {
 	go func() {
 		var count = int(mpl.Count())
 		for i := 0; i < count; i++ {
-			pool.Push([]interface{}{i, mpl.Segments[i], mpl.Key})
+			pool.Push(i, mpl.Segments[i], mpl.Key)
 		}
 		pool.CloseQueue()
 	}()
@@ -185,11 +185,10 @@ func getKey(url string) ([]byte, error) {
 	return key, nil
 }
 
-func download(in interface{}) {
-	params := in.([]interface{})
-	id := params[0].(int)
-	segment := params[1].(*m3u8.MediaSegment)
-	globalKey := params[2].(*m3u8.Key)
+func download(args ...interface{}) {
+	id := args[0].(int)
+	segment := args[1].(*m3u8.MediaSegment)
+	globalKey := args[2].(*m3u8.Key)
 
 	statusCode, data, err := ZHTTP.Get(segment.URI, headers, conf.Retry)
 	if err != nil {
