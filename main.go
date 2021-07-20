@@ -28,7 +28,6 @@ var (
 	conf         *Conf
 	keyCache     = map[string][]byte{}
 	keyCacheLock sync.Mutex
-	headers      map[string]string
 )
 
 type Conf struct {
@@ -171,7 +170,7 @@ func getKey(url string) ([]byte, error) {
 		return key, nil
 	}
 
-	statusCode, key, err := ZHTTP.Get(url, headers, conf.Retry)
+	statusCode, key, err := ZHTTP.Get(url, conf.headers, conf.Retry)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +189,7 @@ func download(args ...interface{}) {
 	segment := args[1].(*m3u8.MediaSegment)
 	globalKey := args[2].(*m3u8.Key)
 
-	statusCode, data, err := ZHTTP.Get(segment.URI, headers, conf.Retry)
+	statusCode, data, err := ZHTTP.Get(segment.URI, conf.headers, conf.Retry)
 	if err != nil {
 		log.Fatalln("[-] Download failed:", id, err)
 	}
