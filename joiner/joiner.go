@@ -58,6 +58,6 @@ func (j *Joiner) Run(count int) error {
 	return j.file.Close()
 }
 
-func (j Joiner) Name() string {
+func (j *Joiner) Name() string {
 	return j.name
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -12,7 +11,6 @@ import (
 	"m3u8-Downloader-Go/zhttp"
 	"net/url"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -36,9 +34,10 @@ type Conf struct {
 	ThreadNum int           `clop:"-n; --thread-number" usage:"thread number" default:"10"`
 	OutFile   string        `clop:"-o; --out-file" usage:"out file"`
 	Retry     int           `clop:"-r; --retry" usage:"number of retries" default:"3"`
-	Timeout   time.Duration `clop:"-t; --timeout" usage:"timeout" default:"30s"`
+	Timeout   time.Duration `clop:"-t; --timeout" usage:"timeout" default:"60s"`
 	Proxy     string        `clop:"-p; --proxy" usage:"proxy. Example: http://127.0.0.1:8080"`
 	Headers   []string      `clop:"-H; --header; greedy" usage:"http header. Example: Referer:http://www.example.com"`
+	FixTS     bool          `clop:"-F; --fix" usage:"try to repair the ts file by removing the image header"`
 	headers   map[string]string
 }
 
@@ -50,16 +49,7 @@ func init() {
 	checkConf()
 
 	if len(conf.Headers) > 0 {
-		conf.headers = map[string]string{}
-		for _, header := range conf.Headers {
-			s := strings.SplitN(header, ":", 2)
-			key := strings.TrimRight(s[0], " ")
-			if len(s) == 2 {
-				conf.headers[key] = strings.TrimLeft(s[1], " ")
-			} else {
-				conf.headers[key] = ""
-			}
-		}
+		parseHeaders()
 	}
 }
 
@@ -79,6 +69,19 @@ func checkConf() {
 
 	if conf.Timeout <= 0 {
 		conf.Timeout = time.Second * 30
+	}
+}
+
+func parseHeaders() {
+	conf.headers = map[string]string{}
+	for _, header := range conf.Headers {
+		s := strings.SplitN(header, ":", 2)
+		key := strings.TrimRight(s[0], " ")
+		if len(s) == 2 {
+			conf.headers[key] = strings.TrimLeft(s[1], " ")
+		} else {
+			conf.headers[key] = ""
+		}
 	}
 }
 
@@ -103,7 +106,7 @@ func downloadM3u8(m3u8URL string) ([]byte, error) {
 	}
 
 	if statusCode/100 != 2 || len(data) == 0 {
-		return nil, errors.New("http code: " + strconv.Itoa(statusCode))
+		return nil, fmt.Errorf("http status code: %d", statusCode)
 	}
 
 	return data, nil
@@ -120,7 +123,7 @@ func parseM3u8(data []byte) (*m3u8.MediaPlaylist, error) {
 		if conf.URL != "" {
 			obj, err = url.Parse(conf.URL)
 			if err != nil {
-				return nil, errors.New("parse m3u8 url failed: " + err.Error())
+				return nil, fmt.Errorf("parse m3u8 url failed: %w", err)
 			}
 		}
 
@@ -158,7 +161,7 @@ func parseM3u8(data []byte) (*m3u8.MediaPlaylist, error) {
 		return mpl, nil
 	}
 
-	return nil, errors.New("unsupport m3u8 type")
+	return nil, fmt.Errorf("unsupport m3u8 type")
 }
 
 func getKey(url string) ([]byte, error) {
@@ -176,7 +179,7 @@ func getKey(url string) ([]byte, error) {
 	}
 
 	if statusCode/100 != 2 || len(key) == 0 {
-		return nil, errors.New("http code: " + strconv.Itoa(statusCode))
+		return nil, fmt.Errorf("http status code: %d", statusCode)
 	}
 
 	keyCache[url] = key
@@ -195,7 +198,7 @@ func download(args ...interface{}) {
 	}
 
 	if statusCode/100 != 2 || len(data) == 0 {
-		log.Fatalln("[-] Download failed, http code:", statusCode)
+		log.Fatalln("[-] Download failed, http status code:", statusCode)
 	}
 
 	var keyURL, ivStr string
@@ -231,6 +234,10 @@ func download(args ...interface{}) {
 
 	log.Println("[+] Download succed:", id, segment.URI)
 
+	if conf.FixTS {
+		data = fixTSFile(data)
+	}
+
 	JOINER.Join(id, data)
 }
 
@@ -240,7 +247,7 @@ func formatURI(base *url.URL, u string) (string, error) {
 	}
 
 	if base == nil {
-		return "", errors.New("you must set m3u8 url for " + conf.File + " to download")
+		return "", fmt.Errorf("you must set m3u8 url for %s to download", conf.File)
 	}
 
 	obj, err := base.Parse(u)
@@ -249,6 +256,23 @@ func formatURI(base *url.URL, u string) (string, error) {
 	}
 
 	return obj.String(), nil
+}
+
+func fixTSFile(data []byte) []byte {
+	syncByte := []byte{0x47}
+	backup := data
+	for {
+		index := bytes.Index(data, syncByte)
+		if index < 0 {
+			return backup
+		}
+
+		if data[index+188] == 0x47 {
+			return data[index:]
+		}
+
+		data = data[index+1:]
+	}
 }
 
 func filename(u string) string {
@@ -307,6 +331,6 @@ func main() {
 		if err != nil {
 			log.Fatalln("[-] Write to file failed:", err)
 		}
-		log.Println("[+] Download succed, saved to", JOINER.Name(), "cost:", time.Now().Sub(t))
+		log.Println("[+] Download succed, saved to", JOINER.Name(), "cost:", time.Since(t))
 	}
 }
