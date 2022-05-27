@@ -1,7 +1,7 @@
 package zhttp
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -13,11 +13,9 @@ type Zhttp struct {
 
 func New(timeout time.Duration, proxy string) (*Zhttp, error) {
 	zhttp := &Zhttp{
-		client: http.DefaultClient,
-	}
-
-	if timeout > 0 {
-		zhttp.client.Timeout = timeout
+		client: &http.Client{
+			Timeout: timeout,
+		},
 	}
 
 	if proxy != "" {
@@ -36,46 +34,37 @@ func New(timeout time.Duration, proxy string) (*Zhttp, error) {
 	return zhttp, nil
 }
 
-func (zhttp *Zhttp) Get(url string, headers map[string]string, retry int) (int, []byte, error) {
+func (zhttp *Zhttp) Get(url string, headers map[string]string, retry int) (code int, body []byte, err error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 Safari/537.36")
-
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36")
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 
-	var body []byte
-	var code int
-
-	var count int
-	for count < retry {
-		count++
-
-		var resp *http.Response
-		resp, err = zhttp.client.Do(req)
-		if err != nil {
-			continue
+	for retry > 0 {
+		retry--
+		code, body, err = zhttp.get(req)
+		if err == nil {
+			return code, body, err
 		}
-
-		body, err = ioutil.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		if err != nil {
-			continue
-		}
-
-		code = resp.StatusCode
-
-		break
 	}
 
+	return
+}
+
+func (zhttp *Zhttp) get(req *http.Request) (int, []byte, error) {
+	resp, err := zhttp.client.Do(req)
 	if err != nil {
 		return 0, nil, err
 	}
-
-	return code, body, nil
+	data, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return 0, nil, err
+	}
+	return resp.StatusCode, data, nil
 }

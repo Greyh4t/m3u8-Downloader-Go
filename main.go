@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"m3u8-Downloader-Go/decrypter"
 	"m3u8-Downloader-Go/joiner"
 	"m3u8-Downloader-Go/zhttp"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -100,16 +100,7 @@ func start(mpl *m3u8.MediaPlaylist) {
 }
 
 func downloadM3u8(m3u8URL string) ([]byte, error) {
-	statusCode, data, err := ZHTTP.Get(m3u8URL, conf.headers, conf.Retry)
-	if err != nil {
-		return nil, err
-	}
-
-	if statusCode/100 != 2 || len(data) == 0 {
-		return nil, fmt.Errorf("http status code: %d", statusCode)
-	}
-
-	return data, nil
+	return get(m3u8URL, conf.headers, conf.Retry)
 }
 
 func parseM3u8(data []byte) (*m3u8.MediaPlaylist, error) {
@@ -173,13 +164,9 @@ func getKey(url string) ([]byte, error) {
 		return key, nil
 	}
 
-	statusCode, key, err := ZHTTP.Get(url, conf.headers, conf.Retry)
+	key, err := get(url, conf.headers, conf.Retry)
 	if err != nil {
 		return nil, err
-	}
-
-	if statusCode/100 != 2 || len(key) == 0 {
-		return nil, fmt.Errorf("http status code: %d", statusCode)
 	}
 
 	keyCache[url] = key
@@ -192,13 +179,9 @@ func download(args ...interface{}) {
 	segment := args[1].(*m3u8.MediaSegment)
 	globalKey := args[2].(*m3u8.Key)
 
-	statusCode, data, err := ZHTTP.Get(segment.URI, conf.headers, conf.Retry)
+	data, err := get(segment.URI, conf.headers, conf.Retry)
 	if err != nil {
 		log.Fatalln("[-] Download failed:", id, err)
-	}
-
-	if statusCode/100 != 2 || len(data) == 0 {
-		log.Fatalln("[-] Download failed, http status code:", statusCode)
 	}
 
 	var keyURL, ivStr string
@@ -281,6 +264,19 @@ func filename(u string) string {
 	return filename
 }
 
+func get(url string, headers map[string]string, retry int) ([]byte, error) {
+	statusCode, data, err := ZHTTP.Get(url, headers, retry)
+	if err != nil {
+		return nil, err
+	}
+
+	if statusCode/100 != 2 || len(data) == 0 {
+		return nil, fmt.Errorf("http status code: %d", statusCode)
+	}
+
+	return data, nil
+}
+
 func main() {
 	var err error
 	ZHTTP, err = zhttp.New(conf.Timeout, conf.Proxy)
@@ -292,7 +288,7 @@ func main() {
 
 	var data []byte
 	if conf.File != "" {
-		data, err = ioutil.ReadFile(conf.File)
+		data, err = os.ReadFile(conf.File)
 		if err != nil {
 			log.Fatalln("[-] Load m3u8 file failed:", err)
 		}
