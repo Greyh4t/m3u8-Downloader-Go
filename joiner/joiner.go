@@ -26,7 +26,6 @@ func New(name string) (*Joiner, error) {
 	}
 
 	return joiner, nil
-
 }
 
 func (j *Joiner) Join(id int, block []byte) {

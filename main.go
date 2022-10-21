@@ -69,7 +69,7 @@ func checkConf() {
 	}
 
 	if conf.Timeout <= 0 {
-		conf.Timeout = time.Second * 30
+		conf.Timeout = time.Second * 60
 	}
 }
 

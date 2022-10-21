@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -12,9 +13,10 @@ type Zhttp struct {
 }
 
 func New(timeout time.Duration, proxy string) (*Zhttp, error) {
-	zhttp := &Zhttp{
+	z := &Zhttp{
 		client: &http.Client{
-			Timeout: timeout,
+			Timeout:   timeout,
+			Transport: http.DefaultTransport.(*http.Transport).Clone(),
 		},
 	}
 
@@ -23,18 +25,15 @@ func New(timeout time.Duration, proxy string) (*Zhttp, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		t := http.DefaultTransport.(*http.Transport).Clone()
-		t.Proxy = func(*http.Request) (*url.URL, error) {
+		z.client.Transport.(*http.Transport).Proxy = func(*http.Request) (*url.URL, error) {
 			return p, nil
 		}
-		zhttp.client.Transport = t
 	}
 
-	return zhttp, nil
+	return z, nil
 }
 
-func (zhttp *Zhttp) Get(url string, headers map[string]string, retry int) (code int, body []byte, err error) {
+func (z *Zhttp) Get(url string, headers map[string]string, retry int) (code int, body []byte, err error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return 0, nil, err
@@ -47,17 +46,26 @@ func (zhttp *Zhttp) Get(url string, headers map[string]string, retry int) (code 
 
 	for retry > 0 {
 		retry--
-		code, body, err = zhttp.get(req)
+		code, body, err = z.get(req)
 		if err == nil {
 			return code, body, err
+		}
+		if strings.Contains(err.Error(), "INTERNAL_ERROR") {
+			z.resetConnection()
 		}
 	}
 
 	return
 }
 
-func (zhttp *Zhttp) get(req *http.Request) (int, []byte, error) {
-	resp, err := zhttp.client.Do(req)
+func (z *Zhttp) resetConnection() {
+	t := z.client.Transport.(*http.Transport)
+	t.CloseIdleConnections()
+	z.client.Transport = t.Clone()
+}
+
+func (z *Zhttp) get(req *http.Request) (int, []byte, error) {
+	resp, err := z.client.Do(req)
 	if err != nil {
 		return 0, nil, err
 	}
