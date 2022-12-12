@@ -29,16 +29,17 @@ var (
 )
 
 type Conf struct {
-	URL       string        `clop:"-u; --url" usage:"url of m3u8 file"`
-	File      string        `clop:"-f; --m3u8-file" usage:"local m3u8 file"`
-	ThreadNum int           `clop:"-n; --thread-number" usage:"thread number" default:"10"`
-	OutFile   string        `clop:"-o; --out-file" usage:"out file"`
-	Retry     int           `clop:"-r; --retry" usage:"number of retries" default:"3"`
-	Timeout   time.Duration `clop:"-t; --timeout" usage:"timeout" default:"60s"`
-	Proxy     string        `clop:"-p; --proxy" usage:"proxy. Example: http://127.0.0.1:8080"`
-	Headers   []string      `clop:"-H; --header; greedy" usage:"http header. Example: Referer:http://www.example.com"`
-	FixTS     bool          `clop:"-F; --fix" usage:"try to repair the ts file by removing the image header"`
-	headers   map[string]string
+	URL        string        `clop:"-u; --url" usage:"url of m3u8 file"`
+	File       string        `clop:"-f; --m3u8-file" usage:"local m3u8 file"`
+	ThreadNum  int           `clop:"-n; --thread-number" usage:"thread number" default:"10"`
+	OutFile    string        `clop:"-o; --out-file" usage:"out file"`
+	Retry      int           `clop:"-r; --retry" usage:"number of retries" default:"3"`
+	Timeout    time.Duration `clop:"-t; --timeout" usage:"timeout" default:"60s"`
+	Proxy      string        `clop:"-p; --proxy" usage:"proxy. Example: http://127.0.0.1:8080"`
+	Headers    []string      `clop:"-H; --header; greedy" usage:"http header. Example: Referer:http://www.example.com"`
+	FixTS      bool          `clop:"-F; --fix" usage:"try to repair the ts file by removing the image header"`
+	SkipVerify bool          `clop:"--skipverify" usage:"skip verify server certificate"`
+	headers    map[string]string
 }
 
 func init() {
@@ -280,7 +281,7 @@ func get(url string, headers map[string]string, retry int) ([]byte, error) {
 
 func main() {
 	var err error
-	ZHTTP, err = zhttp.New(conf.Timeout, conf.Proxy)
+	ZHTTP, err = zhttp.New(conf.Timeout, conf.Proxy, conf.SkipVerify)
 	if err != nil {
 		log.Fatalln("[-] Init failed:", err)
 	}

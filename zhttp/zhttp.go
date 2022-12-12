@@ -1,6 +1,7 @@
 package zhttp
 
 import (
+	"crypto/tls"
 	"io"
 	"net/http"
 	"net/url"
@@ -12,12 +13,15 @@ type Zhttp struct {
 	client *http.Client
 }
 
-func New(timeout time.Duration, proxy string) (*Zhttp, error) {
+func New(timeout time.Duration, proxy string, skipVerify bool) (*Zhttp, error) {
 	z := &Zhttp{
 		client: &http.Client{
 			Timeout:   timeout,
 			Transport: http.DefaultTransport.(*http.Transport).Clone(),
 		},
+	}
+	if skipVerify {
+		z.client.Transport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
 	if proxy != "" {
