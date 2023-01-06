@@ -5,9 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"m3u8-Downloader-Go/decrypter"
-	"m3u8-Downloader-Go/joiner"
-	"m3u8-Downloader-Go/zhttp"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,6 +14,9 @@ import (
 
 	"github.com/grafov/m3u8"
 	"github.com/greyh4t/hackpool"
+	"github.com/greyh4t/m3u8-Downloader-Go/decrypter"
+	"github.com/greyh4t/m3u8-Downloader-Go/joiner"
+	"github.com/greyh4t/m3u8-Downloader-Go/zhttp"
 	"github.com/guonaihong/clop"
 )
 
