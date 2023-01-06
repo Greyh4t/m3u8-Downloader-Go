@@ -1,4 +1,4 @@
-module github.com/Greyh4t/m3u8-Downloader-Go
+module github.com/greyh4t/m3u8-Downloader-Go
 
 go 1.17
 
