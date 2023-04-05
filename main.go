@@ -16,36 +16,41 @@ import (
 	"github.com/greyh4t/hackpool"
 	"github.com/greyh4t/m3u8-Downloader-Go/decrypter"
 	"github.com/greyh4t/m3u8-Downloader-Go/joiner"
+	"github.com/greyh4t/m3u8-Downloader-Go/processbar"
+	"github.com/greyh4t/m3u8-Downloader-Go/ts"
 	"github.com/greyh4t/m3u8-Downloader-Go/zhttp"
 	"github.com/guonaihong/clop"
 )
 
 var (
 	ZHTTP        *zhttp.Zhttp
-	JOINER       *joiner.Joiner
+	JOINER       joiner.Joiner
+	BAR          *processbar.Bar
 	conf         *Conf
 	keyCache     = map[string][]byte{}
 	keyCacheLock sync.Mutex
 )
 
 type Conf struct {
-	URL        string        `clop:"-u; --url" usage:"url of m3u8 file"`
-	File       string        `clop:"-f; --m3u8-file" usage:"local m3u8 file"`
-	ThreadNum  int           `clop:"-n; --thread-number" usage:"thread number" default:"10"`
-	OutFile    string        `clop:"-o; --out-file" usage:"out file"`
-	Retry      int           `clop:"-r; --retry" usage:"number of retries" default:"3"`
-	Timeout    time.Duration `clop:"-t; --timeout" usage:"timeout" default:"60s"`
-	Proxy      string        `clop:"-p; --proxy" usage:"proxy. Example: http://127.0.0.1:8080"`
-	Headers    []string      `clop:"-H; --header; greedy" usage:"http header. Example: Referer:http://www.example.com"`
-	FixTS      bool          `clop:"-F; --fix" usage:"try to repair the ts file by removing the image header"`
-	SkipVerify bool          `clop:"--skipverify" usage:"skip verify server certificate"`
-	headers    map[string]string
+	URL             string        `clop:"-u; --url" usage:"url of m3u8 file"`
+	File            string        `clop:"-f; --m3u8-file" usage:"use local m3u8 file instead of downloading from url"`
+	Connections     int           `clop:"-c; --connections" usage:"number of connections" default:"16"`
+	OutFile         string        `clop:"-o; --out-file" usage:"out file"`
+	Retry           int           `clop:"-r; --retry" usage:"number of retries" default:"3"`
+	Timeout         time.Duration `clop:"-t; --timeout" usage:"timeout" default:"60s"`
+	Proxy           string        `clop:"-p; --proxy" usage:"proxy. Example: http://127.0.0.1:8080"`
+	Headers         []string      `clop:"-H; --header; greedy" usage:"http header. Example: Referer:http://www.example.com"`
+	NoFix           bool          `clop:"-n; --nofix" usage:"don't try to remove the image header of the ts file"`
+	SkipVerify      bool          `clop:"-s; --skipverify" usage:"skip verify server certificate"`
+	MergeWithFFmpeg bool          `clop:"-m; --merge-with-ffmpeg" usage:"merge with ffmpeg"`
+	FFmpeg          string        `clop:"-F; --ffmpeg" usage:"path of ffmpeg" default:"ffmpeg"`
+	headers         map[string]string
 }
 
 func init() {
 	conf = &Conf{}
 	clop.CommandLine.SetExit(true)
-	clop.SetVersion("1.4.1")
+	clop.SetVersion("1.5.0")
 	clop.Bind(&conf)
 
 	checkConf()
@@ -61,8 +66,8 @@ func checkConf() {
 		clop.Usage()
 	}
 
-	if conf.ThreadNum <= 0 {
-		conf.ThreadNum = 10
+	if conf.Connections <= 0 {
+		conf.Connections = 10
 	}
 
 	if conf.Retry <= 0 {
@@ -87,8 +92,8 @@ func parseHeaders() {
 	}
 }
 
-func start(mpl *m3u8.MediaPlaylist) {
-	pool := hackpool.New(conf.ThreadNum, download)
+func startDownload(mpl *m3u8.MediaPlaylist) {
+	pool := hackpool.New(conf.Connections, download)
 
 	go func() {
 		var count = int(mpl.Count())
@@ -98,7 +103,7 @@ func start(mpl *m3u8.MediaPlaylist) {
 		pool.CloseQueue()
 	}()
 
-	go pool.Run()
+	pool.Run()
 }
 
 func downloadM3u8(m3u8URL string) ([]byte, error) {
@@ -217,13 +222,17 @@ func download(args ...interface{}) {
 		}
 	}
 
-	log.Println("[+] Download succed:", id, segment.URI)
-
-	if conf.FixTS {
-		data = fixTSFile(data)
+	if !conf.NoFix {
+		data = ts.TryFix(data)
 	}
 
-	JOINER.Join(id, data)
+	err = JOINER.Add(id, data)
+	if err != nil {
+		log.Fatalln("[-] Write file failed:", err)
+	}
+
+	BAR.Incr()
+	BAR.Flush()
 }
 
 func formatURI(base *url.URL, u string) (string, error) {
@@ -243,26 +252,10 @@ func formatURI(base *url.URL, u string) (string, error) {
 	return obj.String(), nil
 }
 
-func fixTSFile(data []byte) []byte {
-	syncByte := []byte{0x47}
-	backup := data
-	for {
-		index := bytes.Index(data, syncByte)
-		if index < 0 {
-			return backup
-		}
-
-		if data[index+188] == 0x47 {
-			return data[index:]
-		}
-
-		data = data[index+1:]
-	}
-}
-
 func filename(u string) string {
 	obj, _ := url.Parse(u)
 	_, filename := filepath.Split(obj.Path)
+	filename = strings.TrimSuffix(filename, filepath.Ext(filename)) + ".ts"
 	return filename
 }
 
@@ -283,10 +276,8 @@ func main() {
 	var err error
 	ZHTTP, err = zhttp.New(conf.Timeout, conf.Proxy, conf.SkipVerify)
 	if err != nil {
-		log.Fatalln("[-] Init failed:", err)
+		log.Fatalln("[-] Initialization failed:", err)
 	}
-
-	t := time.Now()
 
 	var data []byte
 	if conf.File != "" {
@@ -304,8 +295,6 @@ func main() {
 	mpl, err := parseM3u8(data)
 	if err != nil {
 		log.Fatalln("[-] Parse m3u8 file failed:", err)
-	} else {
-		log.Println("[+] Parse m3u8 file succed")
 	}
 
 	outFile := conf.OutFile
@@ -313,22 +302,30 @@ func main() {
 		outFile = filename(mpl.Segments[0].URI)
 	}
 
-	JOINER, err = joiner.New(outFile)
-	if err != nil {
-		log.Fatalln("[-] Open file failed:", err)
+	if conf.MergeWithFFmpeg {
+		JOINER, err = joiner.NewFFmepg(conf.FFmpeg, outFile)
+		if err != nil {
+			log.Fatalln("[-]", err)
+		}
 	} else {
-		log.Println("[+] Will save to", JOINER.Name())
+		JOINER, err = joiner.NewMem(outFile)
+		if err != nil {
+			log.Fatalln("[-]", err)
+		}
 	}
 
 	if mpl.Count() > 0 {
-		log.Println("[+] Total", mpl.Count(), "files to download")
+		BAR = processbar.New(int(mpl.Count()))
+		BAR.Flush()
 
-		start(mpl)
+		startDownload(mpl)
+		BAR.Finish()
 
-		err = JOINER.Run(int(mpl.Count()))
+		err = JOINER.Merge()
 		if err != nil {
-			log.Fatalln("[-] Write to file failed:", err)
+			log.Fatalln("[-] Saved to", outFile, "failed:", err)
+		} else {
+			log.Println("[+] Saved to", outFile)
 		}
-		log.Println("[+] Download succed, saved to", JOINER.Name(), "cost:", time.Since(t))
 	}
 }
