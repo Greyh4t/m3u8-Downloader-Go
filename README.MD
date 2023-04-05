@@ -26,7 +26,7 @@ Flags:
     -s,--skipverify           skip verify server certificate
 
 Options:
-    -F,--ffmpeg               path of ffmpeg
+    -F,--ffmpeg               path of ffmpeg [default: ffmpeg]
     -H,--header               http header. Example: Referer:http://www.example.com
     -V,--version              print version information
     -c,--connections          number of connections [default: 16]
