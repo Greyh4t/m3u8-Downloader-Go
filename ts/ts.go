@@ -10,6 +10,12 @@ const (
 	packetLength int  = 188
 )
 
+var (
+	jpgHeader = []byte{0xFF, 0xD8, 0xFF}
+	pngHeader = []byte{0x89, 0x50, 0x4e, 0x47}
+	gifHeader = []byte{0x47, 0x49, 0x46, 0x38}
+)
+
 func CheckHead(data []byte) error {
 	pkt, err := ReadPacket(data)
 	if err != nil {
@@ -70,11 +76,11 @@ func TryFix(data []byte) []byte {
 		return data
 	}
 
-	if data[0] == syncByte {
-		return data
+	if bytes.HasPrefix(data, jpgHeader) || bytes.HasPrefix(data, pngHeader) || bytes.HasPrefix(data, gifHeader) {
+		return Fix(data)
 	}
 
-	return Fix(data)
+	return data
 }
 
 func Fix(data []byte) []byte {
