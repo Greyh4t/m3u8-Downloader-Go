@@ -110,58 +110,6 @@ func downloadM3u8(m3u8URL string) ([]byte, error) {
 	return get(m3u8URL, conf.headers, conf.Retry)
 }
 
-func parseM3u8(data []byte) (*m3u8.MediaPlaylist, error) {
-	playlist, listType, err := m3u8.Decode(*bytes.NewBuffer(data), true)
-	if err != nil {
-		return nil, err
-	}
-
-	if listType == m3u8.MEDIA {
-		var obj *url.URL
-		if conf.URL != "" {
-			obj, err = url.Parse(conf.URL)
-			if err != nil {
-				return nil, fmt.Errorf("parse m3u8 url failed: %w", err)
-			}
-		}
-
-		mpl := playlist.(*m3u8.MediaPlaylist)
-
-		if mpl.Key != nil && mpl.Key.URI != "" {
-			uri, err := formatURI(obj, mpl.Key.URI)
-			if err != nil {
-				return nil, err
-			}
-			mpl.Key.URI = uri
-		}
-
-		count := int(mpl.Count())
-		for i := 0; i < count; i++ {
-			segment := mpl.Segments[i]
-
-			uri, err := formatURI(obj, segment.URI)
-			if err != nil {
-				return nil, err
-			}
-			segment.URI = uri
-
-			if segment.Key != nil && segment.Key.URI != "" {
-				uri, err := formatURI(obj, segment.Key.URI)
-				if err != nil {
-					return nil, err
-				}
-				segment.Key.URI = uri
-			}
-
-			mpl.Segments[i] = segment
-		}
-
-		return mpl, nil
-	}
-
-	return nil, fmt.Errorf("unsupport m3u8 type")
-}
-
 func getKey(url string) ([]byte, error) {
 	keyCacheLock.Lock()
 	defer keyCacheLock.Unlock()
@@ -235,27 +183,37 @@ func download(args ...interface{}) {
 	BAR.Flush()
 }
 
-func formatURI(base *url.URL, u string) (string, error) {
-	if strings.HasPrefix(u, "http") {
-		return u, nil
+func formatURI(base string, uri string) (string, error) {
+	if strings.HasPrefix(uri, "http") {
+		return uri, nil
 	}
 
-	if base == nil {
-		return "", fmt.Errorf("you must set m3u8 url for %s to download", conf.File)
+	if base == "" {
+		return "", fmt.Errorf("base url must be set")
 	}
 
-	obj, err := base.Parse(u)
+	u, err := url.Parse(base)
 	if err != nil {
 		return "", err
 	}
 
-	return obj.String(), nil
+	u, err = u.Parse(uri)
+	if err != nil {
+		return "", err
+	}
+
+	return u.String(), nil
 }
 
 func filename(u string) string {
 	obj, _ := url.Parse(u)
 	_, filename := filepath.Split(obj.Path)
-	filename = strings.TrimSuffix(filename, filepath.Ext(filename)) + ".ts"
+	ext := filepath.Ext(filename)
+	lowerExt := strings.ToLower(ext)
+	if lowerExt == ".ts" || lowerExt == ".mp4" {
+		return filename
+	}
+	filename = strings.TrimSuffix(filename, ext) + ".ts"
 	return filename
 }
 
@@ -272,6 +230,73 @@ func get(url string, headers map[string]string, retry int) ([]byte, error) {
 	return data, nil
 }
 
+func parseM3u8(m3u8URL string, data []byte) (*m3u8.MediaPlaylist, error) {
+	if data != nil {
+		playlist, listType, err := m3u8.Decode(*bytes.NewBuffer(data), true)
+		if err != nil {
+			return nil, err
+		}
+
+		if listType == m3u8.MEDIA {
+			mpl := playlist.(*m3u8.MediaPlaylist)
+
+			if mpl.Key != nil && mpl.Key.URI != "" {
+				uri, err := formatURI(m3u8URL, mpl.Key.URI)
+				if err != nil {
+					return nil, fmt.Errorf("format uri failed: %w", err)
+				}
+				mpl.Key.URI = uri
+			}
+
+			count := int(mpl.Count())
+			for i := 0; i < count; i++ {
+				segment := mpl.Segments[i]
+
+				uri, err := formatURI(m3u8URL, segment.URI)
+				if err != nil {
+					return nil, fmt.Errorf("format uri failed: %w", err)
+				}
+				segment.URI = uri
+
+				if segment.Key != nil && segment.Key.URI != "" {
+					uri, err := formatURI(m3u8URL, segment.Key.URI)
+					if err != nil {
+						return nil, fmt.Errorf("format uri failed: %w", err)
+					}
+					segment.Key.URI = uri
+				}
+
+				mpl.Segments[i] = segment
+			}
+
+			return mpl, nil
+			// Master Playlist
+		} else {
+			var (
+				maxBandWidth uint32
+				index        int
+			)
+			mpl := playlist.(*m3u8.MasterPlaylist)
+			for i, variant := range mpl.Variants {
+				if variant.Bandwidth > maxBandWidth {
+					index = i
+				}
+			}
+			u, err := formatURI(m3u8URL, mpl.Variants[index].URI)
+			if err != nil {
+				return nil, fmt.Errorf("format uri failed: %w", err)
+			}
+			return parseM3u8(u, nil)
+		}
+	}
+
+	data, err := downloadM3u8(m3u8URL)
+	if err != nil {
+		return nil, err
+	}
+	return parseM3u8(m3u8URL, data)
+}
+
 func main() {
 	var err error
 	ZHTTP, err = zhttp.New(conf.Timeout, conf.Proxy, conf.SkipVerify)
@@ -285,14 +310,9 @@ func main() {
 		if err != nil {
 			log.Fatalln("[-] Load m3u8 file failed:", err)
 		}
-	} else {
-		data, err = downloadM3u8(conf.URL)
-		if err != nil {
-			log.Fatalln("[-] Download m3u8 file failed:", err)
-		}
 	}
 
-	mpl, err := parseM3u8(data)
+	mpl, err := parseM3u8(conf.URL, data)
 	if err != nil {
 		log.Fatalln("[-] Parse m3u8 file failed:", err)
 	}
