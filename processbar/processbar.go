@@ -40,7 +40,7 @@ func (b *Bar) SetTag(tag string) *Bar {
 
 func (b *Bar) Incr() {
 	b.mut.Lock()
-	if b.count == 0 {
+	if b.startTime.IsZero() {
 		b.startTime = time.Now()
 	}
 	b.count++
@@ -58,6 +58,7 @@ func (b *Bar) AutoFlush(interval time.Duration) {
 	b.ctx = ctx
 	b.cancel = cancel
 	b.ticker = time.NewTicker(interval)
+	b.Flush()
 	go func() {
 		for {
 			select {
@@ -89,6 +90,9 @@ func (b *Bar) calculate() {
 
 func (b *Bar) display() {
 	b.mut.Lock()
+	if b.startTime.IsZero() {
+		b.startTime = time.Now()
+	}
 	secs := time.Second * time.Duration(int(time.Since(b.startTime)/time.Second))
 	fmt.Fprintf(os.Stderr, b.format, strings.Repeat(b.tag, b.percent/2), b.percent, b.count, b.total, secs)
 	b.mut.Unlock()
