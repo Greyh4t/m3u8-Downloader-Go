@@ -28,34 +28,26 @@ func NewFFmepg(ffmpeg string, outFile string) (*FFmepgJoiner, error) {
 		return nil, err
 	}
 
+	dir, err := joiner.mkdir()
+	if err != nil {
+		return nil, err
+	}
+	joiner.cacheDir = dir
+
 	return joiner, nil
 }
 
-func (j *FFmepgJoiner) mkdir() error {
-	j.l.Lock()
-	if j.cacheDir == "" {
-		cache, err := os.MkdirTemp("./", "m3u8_cache_*")
-		if err != nil {
-			return err
-		}
-		cache, err = filepath.Abs(cache)
-		if err != nil {
-			return err
-		}
-		j.cacheDir = cache
+func (j *FFmepgJoiner) mkdir() (string, error) {
+	cache, err := os.MkdirTemp("./", "m3u8_cache_*")
+	if err != nil {
+		return "", err
 	}
-	j.l.Unlock()
-	return nil
+	return filepath.Abs(cache)
 }
 
 func (j *FFmepgJoiner) Add(id int, block []byte) error {
-	err := j.mkdir()
-	if err != nil {
-		return err
-	}
-
 	file := filepath.Join(j.cacheDir, fmt.Sprintf("%d.ts", id))
-	err = os.WriteFile(file, block, 0644)
+	err := os.WriteFile(file, block, 0644)
 	if err != nil {
 		return err
 	}
