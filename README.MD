@@ -12,7 +12,7 @@ Download m3u8 media with multithreading, support decrypt
 
 When using the -f parameter, if the m3u8 file does not contain a specific link to the media, but only the media name, you must specify the -u parameter
 
-Some websites will add an image header at the beginning of the video file. If the video you downloaded cannot be played normally, please try the `--fix` parameter
+Some websites will add an image header at the beginning of the video file. The tool will attempt to remove these header. If there are issues with the downloaded video, please try using the `--nofix` parameter
 
 ```
 ./m3u8-Downloader-Go -h
