@@ -8,19 +8,20 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/grafov/m3u8"
 	"github.com/greyh4t/hackpool"
-	"github.com/guonaihong/clop"
-
 	"github.com/greyh4t/m3u8-Downloader-Go/decrypter"
 	"github.com/greyh4t/m3u8-Downloader-Go/joiner"
 	"github.com/greyh4t/m3u8-Downloader-Go/processbar"
 	"github.com/greyh4t/m3u8-Downloader-Go/ts"
 	"github.com/greyh4t/m3u8-Downloader-Go/zhttp"
+	"github.com/guonaihong/clop"
 )
 
 var (
@@ -46,6 +47,7 @@ type Conf struct {
 	MergeWithFFmpeg   bool          `clop:"-m; --merge-with-ffmpeg" usage:"merge with ffmpeg"`
 	FFmpeg            string        `clop:"-F; --ffmpeg" usage:"path of ffmpeg" default:"ffmpeg"`
 	DesiredResolution string        `clop:"-d; --desired-resolution" usage:"desired resolution. Example: 1920x1080"`
+	ListResolution    bool          `clop:"-l; --list-resolution" usage:"list resolution"`
 	headers           map[string]string
 }
 
@@ -274,21 +276,13 @@ func parseM3u8(m3u8URL string, desiredResolution string, data []byte) (*m3u8.Med
 			return mpl, nil
 			// Master Playlist
 		} else {
-			var (
-				maxBandWidth uint32
-				index        int
-			)
 			mpl := playlist.(*m3u8.MasterPlaylist)
-			for i, variant := range mpl.Variants {
-				if desiredResolution != "" && desiredResolution == variant.Resolution {
-					index = i
-					break
-				}
-				if variant.Bandwidth > maxBandWidth {
-					index = i
-				}
+			variant, err := findVariant(mpl.Variants, desiredResolution)
+			if err != nil {
+				return nil, err
 			}
-			u, err := formatURI(m3u8URL, mpl.Variants[index].URI)
+
+			u, err := formatURI(m3u8URL, variant.URI)
 			if err != nil {
 				return nil, fmt.Errorf("format uri failed: %w", err)
 			}
@@ -301,6 +295,87 @@ func parseM3u8(m3u8URL string, desiredResolution string, data []byte) (*m3u8.Med
 		return nil, err
 	}
 	return parseM3u8(m3u8URL, desiredResolution, data)
+}
+
+func listResolution(m3u8URL string, data []byte) error {
+	if data != nil {
+		playlist, listType, err := m3u8.Decode(*bytes.NewBuffer(data), true)
+		if err != nil {
+			return err
+		}
+
+		if listType == m3u8.MEDIA {
+			return fmt.Errorf("resource is not a playlist")
+		} else {
+			mpl := playlist.(*m3u8.MasterPlaylist)
+			var list []string
+			for _, v := range mpl.Variants {
+				if v.Iframe {
+					continue
+				}
+				list = append(list, fmt.Sprintf("Resolution: %-9s Bandwidth: %-8d FrameRate: %.2f Codecs: %s", v.Resolution, v.Bandwidth, v.FrameRate, v.Codecs))
+			}
+			fmt.Println(strings.Join(list, "\n"))
+			return nil
+		}
+	}
+
+	data, err := downloadM3u8(m3u8URL)
+	if err != nil {
+		return err
+	}
+	return listResolution(m3u8URL, data)
+}
+
+func findVariant(variants []*m3u8.Variant, resolution string) (*m3u8.Variant, error) {
+	if len(variants) == 0 {
+		return nil, fmt.Errorf("variants not found")
+	}
+
+	sort.Slice(variants, func(i, j int) bool {
+		if variants[i].Resolution != "" && variants[j].Resolution != "" {
+			widthi, heighti := parseResolution(variants[i].Resolution)
+			widthj, heightj := parseResolution(variants[j].Resolution)
+			if widthi*heighti < widthj*heightj {
+				return false
+			} else if widthi*heighti > widthj*heightj {
+				return true
+			}
+		}
+
+		return variants[i].Bandwidth > variants[j].Bandwidth
+	})
+
+	if resolution != "" {
+		for _, v := range variants {
+			if v.Iframe {
+				continue
+			}
+			if v.Resolution == resolution {
+				return v, nil
+			}
+		}
+
+		return nil, fmt.Errorf("resolution %s not found", resolution)
+	}
+
+	return variants[0], nil
+}
+
+func parseResolution(resolution string) (uint64, uint64) {
+	arr := strings.Split(resolution, "x")
+	if len(arr) != 2 {
+		return 0, 0
+	}
+	width, err := strconv.ParseUint(arr[0], 10, 64)
+	if err != nil {
+		return 0, 0
+	}
+	height, err := strconv.ParseUint(arr[1], 10, 64)
+	if err != nil {
+		return 0, 0
+	}
+	return width, height
 }
 
 func main() {
@@ -316,6 +391,14 @@ func main() {
 		if err != nil {
 			log.Fatalln("[-] Load m3u8 file failed:", err)
 		}
+	}
+
+	if conf.ListResolution {
+		err := listResolution(conf.URL, data)
+		if err != nil {
+			log.Fatalln("[-] Parse m3u8 file failed:", err)
+		}
+		return
 	}
 
 	mpl, err := parseM3u8(conf.URL, conf.DesiredResolution, data)
