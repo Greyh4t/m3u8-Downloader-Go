@@ -37,4 +37,5 @@ Options:
     -r,--retry                number of retries [default: 3]
     -t,--timeout              timeout [default: 60s]
     -u,--url                  url of m3u8 file
+    -d,--desired-resolution   desired resolution. Example: 1920x1080
 ```

@@ -14,12 +14,13 @@ import (
 
 	"github.com/grafov/m3u8"
 	"github.com/greyh4t/hackpool"
+	"github.com/guonaihong/clop"
+
 	"github.com/greyh4t/m3u8-Downloader-Go/decrypter"
 	"github.com/greyh4t/m3u8-Downloader-Go/joiner"
 	"github.com/greyh4t/m3u8-Downloader-Go/processbar"
 	"github.com/greyh4t/m3u8-Downloader-Go/ts"
 	"github.com/greyh4t/m3u8-Downloader-Go/zhttp"
-	"github.com/guonaihong/clop"
 )
 
 var (
@@ -32,19 +33,20 @@ var (
 )
 
 type Conf struct {
-	URL             string        `clop:"-u; --url" usage:"url of m3u8 file"`
-	File            string        `clop:"-f; --m3u8-file" usage:"use local m3u8 file instead of downloading from url"`
-	Connections     int           `clop:"-c; --connections" usage:"number of connections" default:"16"`
-	OutFile         string        `clop:"-o; --out-file" usage:"out file"`
-	Retry           int           `clop:"-r; --retry" usage:"number of retries" default:"3"`
-	Timeout         time.Duration `clop:"-t; --timeout" usage:"timeout" default:"60s"`
-	Proxy           string        `clop:"-p; --proxy" usage:"proxy. Example: http://127.0.0.1:8080"`
-	Headers         []string      `clop:"-H; --header; greedy" usage:"http header. Example: Referer:http://www.example.com"`
-	NoFix           bool          `clop:"-n; --nofix" usage:"don't try to remove the image header of the ts file"`
-	SkipVerify      bool          `clop:"-s; --skipverify" usage:"skip verify server certificate"`
-	MergeWithFFmpeg bool          `clop:"-m; --merge-with-ffmpeg" usage:"merge with ffmpeg"`
-	FFmpeg          string        `clop:"-F; --ffmpeg" usage:"path of ffmpeg" default:"ffmpeg"`
-	headers         map[string]string
+	URL               string        `clop:"-u; --url" usage:"url of m3u8 file"`
+	File              string        `clop:"-f; --m3u8-file" usage:"use local m3u8 file instead of downloading from url"`
+	Connections       int           `clop:"-c; --connections" usage:"number of connections" default:"16"`
+	OutFile           string        `clop:"-o; --out-file" usage:"out file"`
+	Retry             int           `clop:"-r; --retry" usage:"number of retries" default:"3"`
+	Timeout           time.Duration `clop:"-t; --timeout" usage:"timeout" default:"60s"`
+	Proxy             string        `clop:"-p; --proxy" usage:"proxy. Example: http://127.0.0.1:8080"`
+	Headers           []string      `clop:"-H; --header; greedy" usage:"http header. Example: Referer:http://www.example.com"`
+	NoFix             bool          `clop:"-n; --nofix" usage:"don't try to remove the image header of the ts file"`
+	SkipVerify        bool          `clop:"-s; --skipverify" usage:"skip verify server certificate"`
+	MergeWithFFmpeg   bool          `clop:"-m; --merge-with-ffmpeg" usage:"merge with ffmpeg"`
+	FFmpeg            string        `clop:"-F; --ffmpeg" usage:"path of ffmpeg" default:"ffmpeg"`
+	DesiredResolution string        `clop:"-d; --desired-resolution" usage:"desired resolution. Example: 1920x1080"`
+	headers           map[string]string
 }
 
 func init() {
@@ -230,7 +232,7 @@ func get(url string, headers map[string]string, retry int) ([]byte, error) {
 	return data, nil
 }
 
-func parseM3u8(m3u8URL string, data []byte) (*m3u8.MediaPlaylist, error) {
+func parseM3u8(m3u8URL string, desiredResolution string, data []byte) (*m3u8.MediaPlaylist, error) {
 	if data != nil {
 		playlist, listType, err := m3u8.Decode(*bytes.NewBuffer(data), true)
 		if err != nil {
@@ -278,6 +280,10 @@ func parseM3u8(m3u8URL string, data []byte) (*m3u8.MediaPlaylist, error) {
 			)
 			mpl := playlist.(*m3u8.MasterPlaylist)
 			for i, variant := range mpl.Variants {
+				if desiredResolution != "" && desiredResolution == variant.Resolution {
+					index = i
+					break
+				}
 				if variant.Bandwidth > maxBandWidth {
 					index = i
 				}
@@ -286,7 +292,7 @@ func parseM3u8(m3u8URL string, data []byte) (*m3u8.MediaPlaylist, error) {
 			if err != nil {
 				return nil, fmt.Errorf("format uri failed: %w", err)
 			}
-			return parseM3u8(u, nil)
+			return parseM3u8(u, desiredResolution, nil)
 		}
 	}
 
@@ -294,7 +300,7 @@ func parseM3u8(m3u8URL string, data []byte) (*m3u8.MediaPlaylist, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseM3u8(m3u8URL, data)
+	return parseM3u8(m3u8URL, desiredResolution, data)
 }
 
 func main() {
@@ -312,7 +318,7 @@ func main() {
 		}
 	}
 
-	mpl, err := parseM3u8(conf.URL, data)
+	mpl, err := parseM3u8(conf.URL, conf.DesiredResolution, data)
 	if err != nil {
 		log.Fatalln("[-] Parse m3u8 file failed:", err)
 	}
