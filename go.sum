@@ -19,6 +19,8 @@ github.com/go-playground/validator/v10 v10.11.2 h1:q3SHpufmypg+erIExEKUmsgmhDTyh
 github.com/go-playground/validator/v10 v10.11.2/go.mod h1:NieE624vt4SCTJtD87arVLvdmjPAeV8BQlHtMnw9D7s=
 github.com/grafov/m3u8 v0.11.1 h1:igZ7EBIB2IAsPPazKwRKdbhxcoBKO3lO1UY57PZDeNA=
 github.com/grafov/m3u8 v0.11.1/go.mod h1:nqzOkfBiZJENr52zTVd/Dcl03yzphIMbJqkXGu+u080=
+github.com/grafov/m3u8 v0.12.0 h1:T6iTwTsSEtMcwkayef+FJO8kj+Sglr4Lh81Zj8Ked/4=
+github.com/grafov/m3u8 v0.12.0/go.mod h1:nqzOkfBiZJENr52zTVd/Dcl03yzphIMbJqkXGu+u080=
 github.com/greyh4t/hackpool v0.0.0-20200716154043-b726bc962990 h1:vepmN1HroZ+B7HhNyMy6gNdONIk32rAUZPO/uZRvHdA=
 github.com/greyh4t/hackpool v0.0.0-20200716154043-b726bc962990/go.mod h1:Jw80xlqkuNer3FOzTRThn5AdcgLE9g1EYnT4cmN3C6M=
 github.com/guonaihong/clop v0.2.10 h1:AJmCj+UHSoze9IB0C/yfl1TOd5PZmhP6PszHrjw2sug=

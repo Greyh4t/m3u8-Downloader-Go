@@ -100,9 +100,8 @@ func startDownload(mpl *m3u8.MediaPlaylist) {
 	pool := hackpool.New(conf.Connections, download)
 
 	go func() {
-		var count = int(mpl.Count())
-		for i := 0; i < count; i++ {
-			pool.Push(i, mpl.Segments[i], mpl.Key)
+		for i, segment := range mpl.GetAllSegments() {
+			pool.Push(i, segment, mpl.Key)
 		}
 		pool.CloseQueue()
 	}()
@@ -252,10 +251,7 @@ func parseM3u8(m3u8URL string, desiredResolution string, data []byte) (*m3u8.Med
 				mpl.Key.URI = uri
 			}
 
-			count := int(mpl.Count())
-			for i := 0; i < count; i++ {
-				segment := mpl.Segments[i]
-
+			for _, segment := range mpl.GetAllSegments() {
 				uri, err := formatURI(m3u8URL, segment.URI)
 				if err != nil {
 					return nil, fmt.Errorf("format uri failed: %w", err)
@@ -269,8 +265,6 @@ func parseM3u8(m3u8URL string, desiredResolution string, data []byte) (*m3u8.Med
 					}
 					segment.Key.URI = uri
 				}
-
-				mpl.Segments[i] = segment
 			}
 
 			return mpl, nil
@@ -408,7 +402,7 @@ func main() {
 
 	outFile := conf.OutFile
 	if outFile == "" {
-		outFile = filename(mpl.Segments[0].URI)
+		outFile = filename(mpl.GetAllSegments()[0].URI)
 	}
 
 	if conf.MergeWithFFmpeg {
