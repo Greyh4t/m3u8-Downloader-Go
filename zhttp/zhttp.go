@@ -1,6 +1,7 @@
 package zhttp
 
 import (
+	"compress/gzip"
 	"crypto/tls"
 	"io"
 	"net/http"
@@ -73,10 +74,41 @@ func (z *Zhttp) get(req *http.Request) (int, []byte, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	data, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	defer resp.Body.Close()
+
+	r := resp.Body
+	if equalFold(resp.Header.Get("Content-Encoding"), "gzip") && !resp.Uncompressed {
+		r, err = gzip.NewReader(resp.Body)
+		if err != nil {
+			return 0, nil, err
+		}
+		defer r.Close()
+	}
+	data, err := io.ReadAll(r)
 	if err != nil {
 		return 0, nil, err
 	}
 	return resp.StatusCode, data, nil
+}
+
+// equalFold is strings.equalFold, ASCII only. It reports whether s and t
+// are equal, ASCII-case-insensitively.
+func equalFold(s, t string) bool {
+	if len(s) != len(t) {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if lower(s[i]) != lower(t[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// lower returns the ASCII lowercase version of b.
+func lower(b byte) byte {
+	if 'A' <= b && b <= 'Z' {
+		return b + ('a' - 'A')
+	}
+	return b
 }
