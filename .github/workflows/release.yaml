@@ -1,0 +1,39 @@
+name: release
+on:
+  release:
+    types: [created]
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+        exclude:
+          - goarch: arm64
+            goos: windows
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.21
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          name=m3u8-Downloader-Go
+          output=${name}
+          if [ "${{ matrix.goos }}" == "windows" ]; then
+            output=${name}.exe
+          fi
+          echo "TGZ_FILE=${name}_${{ matrix.goos }}_${{ matrix.goarch }}.tgz" >> $GITHUB_ENV
+          echo "OUTPUT_FILE=${output}" >> $GITHUB_ENV
+          go build -ldflags="-s -w" -o ${output} ./
+      - name: Pack
+        run: tar czf ${{ env.TGZ_FILE }} ${{ env.OUTPUT_FILE }}
+      - name: Upload
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ env.TGZ_FILE }}
