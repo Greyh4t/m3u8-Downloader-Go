@@ -97,23 +97,95 @@ func parseHeaders() {
 }
 
 func startDownload(mpl *m3u8.MediaPlaylist) {
+	containMap := mpl.Map != nil && mpl.Map.URI != ""
+	count := mpl.Count()
+	if containMap {
+		count += 1
+	}
+
+	BAR = processbar.New(int(count))
+	BAR.Flush()
+
 	pool := hackpool.New(conf.Connections, download)
 
 	go func() {
+		if containMap {
+			pool.Push(mpl.Map.URI, conf.headers, conf.Retry, callback(0, nil, nil))
+		}
+
 		for i, segment := range mpl.GetAllSegments() {
-			pool.Push(i, segment, mpl.Key)
+			key, iv, err := getKey(i, segment.Key)
+			if err != nil {
+				log.Fatalln("[-] Download failed: %w", err)
+			}
+			if containMap {
+				pool.Push(segment.URI, conf.headers, conf.Retry, callback(i+1, key, iv))
+			} else {
+				pool.Push(segment.URI, conf.headers, conf.Retry, callback(i, key, iv))
+			}
 		}
 		pool.CloseQueue()
 	}()
 
 	pool.Run()
+
+	BAR.Finish()
+}
+
+func callback(id int, key, iv []byte) func([]byte, error) {
+	return func(data []byte, err error) {
+		if err != nil {
+			log.Fatalln("[-] Download failed:", id, err)
+		}
+
+		if key != nil {
+			data, err = decrypter.Decrypt(data, key, iv)
+			if err != nil {
+				log.Fatalln("[-] Decrypt failed:", err)
+			}
+		}
+
+		if !conf.NoFix {
+			data = ts.TryFix(data)
+		}
+
+		err = JOINER.Add(id, data)
+		if err != nil {
+			log.Fatalln("[-] Write file failed:", err)
+		}
+
+		BAR.Incr()
+		BAR.Flush()
+	}
+}
+
+func getKey(id int, key *m3u8.Key) ([]byte, []byte, error) {
+	if key != nil && key.URI != "" {
+		var k, iv []byte
+		k, err := fetchKey(key.URI)
+		if err != nil {
+			return nil, nil, fmt.Errorf("download key from %s error: %w", key.URI, err)
+		}
+
+		if key.IV != "" {
+			iv, err = hex.DecodeString(strings.TrimPrefix(key.IV, "0x"))
+			if err != nil {
+				return nil, nil, fmt.Errorf("decode iv error: %w", err)
+			}
+		} else {
+			iv = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, byte(id)}
+		}
+		return k, iv, nil
+	}
+
+	return nil, nil, nil
 }
 
 func downloadM3u8(m3u8URL string) ([]byte, error) {
 	return get(m3u8URL, conf.headers, conf.Retry)
 }
 
-func getKey(url string) ([]byte, error) {
+func fetchKey(url string) ([]byte, error) {
 	keyCacheLock.Lock()
 	defer keyCacheLock.Unlock()
 
@@ -133,57 +205,13 @@ func getKey(url string) ([]byte, error) {
 }
 
 func download(args ...interface{}) {
-	id := args[0].(int)
-	segment := args[1].(*m3u8.MediaSegment)
-	globalKey := args[2].(*m3u8.Key)
+	url := args[0].(string)
+	headers := args[1].(map[string]string)
+	retry := args[2].(int)
+	fn := args[3].(func([]byte, error))
 
-	data, err := get(segment.URI, conf.headers, conf.Retry)
-	if err != nil {
-		log.Fatalln("[-] Download failed:", id, err)
-	}
-
-	var keyURL, ivStr string
-	if segment.Key != nil && segment.Key.URI != "" {
-		keyURL = segment.Key.URI
-		ivStr = segment.Key.IV
-	} else if globalKey != nil && globalKey.URI != "" {
-		keyURL = globalKey.URI
-		ivStr = globalKey.IV
-	}
-
-	if keyURL != "" {
-		var key, iv []byte
-		key, err = getKey(keyURL)
-		if err != nil {
-			log.Fatalln("[-] Download key failed:", keyURL, err)
-		}
-
-		if ivStr != "" {
-			iv, err = hex.DecodeString(strings.TrimPrefix(ivStr, "0x"))
-			if err != nil {
-				log.Fatalln("[-] Decode iv failed:", err)
-			}
-		} else {
-			iv = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, byte(id)}
-		}
-
-		data, err = decrypter.Decrypt(data, key, iv)
-		if err != nil {
-			log.Fatalln("[-] Decrypt failed:", err)
-		}
-	}
-
-	if !conf.NoFix {
-		data = ts.TryFix(data)
-	}
-
-	err = JOINER.Add(id, data)
-	if err != nil {
-		log.Fatalln("[-] Write file failed:", err)
-	}
-
-	BAR.Incr()
-	BAR.Flush()
+	data, err := get(url, headers, retry)
+	fn(data, err)
 }
 
 func formatURI(base string, uri string) (string, error) {
@@ -208,16 +236,27 @@ func formatURI(base string, uri string) (string, error) {
 	return u.String(), nil
 }
 
-func filename(u string) string {
+func filename(u string, u1 string) string {
 	obj, _ := url.Parse(u)
 	_, filename := filepath.Split(obj.Path)
+	if filename == "" {
+		filename = "index_" + time.Now().Format("20060102150405")
+	}
 	ext := filepath.Ext(filename)
 	lowerExt := strings.ToLower(ext)
 	if lowerExt == ".ts" || lowerExt == ".mp4" {
 		return filename
 	}
-	filename = strings.TrimSuffix(filename, ext) + ".ts"
-	return filename
+	filename = strings.TrimSuffix(filename, ext)
+
+	o1, _ := url.Parse(u1)
+	_, f1 := filepath.Split(o1.Path)
+	ext = filepath.Ext(f1)
+	if ext == ".m4s" {
+		ext = ".mp4"
+	}
+
+	return filename + ext
 }
 
 func get(url string, headers map[string]string, retry int) ([]byte, error) {
@@ -242,6 +281,14 @@ func parseM3u8(m3u8URL string, desiredResolution string, data []byte) (*m3u8.Med
 
 		if listType == m3u8.MEDIA {
 			mpl := playlist.(*m3u8.MediaPlaylist)
+
+			if mpl.Map != nil && mpl.Map.URI != "" {
+				uri, err := formatURI(m3u8URL, mpl.Map.URI)
+				if err != nil {
+					return nil, fmt.Errorf("format uri failed: %w", err)
+				}
+				mpl.Map.URI = uri
+			}
 
 			if mpl.Key != nil && mpl.Key.URI != "" {
 				uri, err := formatURI(m3u8URL, mpl.Key.URI)
@@ -402,7 +449,7 @@ func main() {
 
 	outFile := conf.OutFile
 	if outFile == "" {
-		outFile = filename(mpl.GetAllSegments()[0].URI)
+		outFile = filename(conf.URL, mpl.Segments[0].URI)
 	}
 
 	if conf.MergeWithFFmpeg {
@@ -418,11 +465,7 @@ func main() {
 	}
 
 	if mpl.Count() > 0 {
-		BAR = processbar.New(int(mpl.Count()))
-		BAR.Flush()
-
 		startDownload(mpl)
-		BAR.Finish()
 
 		err = JOINER.Merge()
 		if err != nil {
