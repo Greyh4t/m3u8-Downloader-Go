@@ -54,7 +54,7 @@ type Conf struct {
 func init() {
 	conf = &Conf{}
 	clop.CommandLine.SetExit(true)
-	clop.SetVersion("1.5.0")
+	clop.SetVersion("1.5.2")
 	clop.Bind(&conf)
 
 	checkConf()
