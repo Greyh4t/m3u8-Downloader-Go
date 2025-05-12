@@ -54,7 +54,7 @@ type Conf struct {
 func init() {
 	conf = &Conf{}
 	clop.CommandLine.SetExit(true)
-	clop.SetVersion("1.5.2")
+	clop.SetVersion("1.5.3")
 	clop.Bind(&conf)
 
 	checkConf()
@@ -308,7 +308,7 @@ func parseM3u8(m3u8URL string, desiredResolution string, data []byte) (*m3u8.Med
 				if segment.Key == nil && mpl.Key != nil {
 					segment.Key = mpl.Key
 				}
-				
+
 				if segment.Key != nil && segment.Key.URI != "" {
 					uri, err := formatURI(m3u8URL, segment.Key.URI)
 					if err != nil {

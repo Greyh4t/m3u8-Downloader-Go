@@ -30,9 +30,7 @@ func New(timeout time.Duration, proxy string, skipVerify bool) (*Zhttp, error) {
 		if err != nil {
 			return nil, err
 		}
-		z.client.Transport.(*http.Transport).Proxy = func(*http.Request) (*url.URL, error) {
-			return p, nil
-		}
+		z.client.Transport.(*http.Transport).Proxy = http.ProxyURL(p)
 	}
 
 	return z, nil
@@ -44,7 +42,7 @@ func (z *Zhttp) Get(url string, headers map[string]string, retry int) (code int,
 		return 0, nil, err
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36")
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -53,11 +51,13 @@ func (z *Zhttp) Get(url string, headers map[string]string, retry int) (code int,
 		retry--
 		code, body, err = z.get(req)
 		if err == nil {
-			return code, body, err
-		}
-		if strings.Contains(err.Error(), "INTERNAL_ERROR") {
+			if code/100 == 2 {
+				return code, body, err
+			}
+		} else if strings.Contains(err.Error(), "INTERNAL_ERROR") {
 			z.resetConnection()
 		}
+		time.Sleep(time.Second * 2)
 	}
 
 	return

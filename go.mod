@@ -1,11 +1,13 @@
 module github.com/greyh4t/m3u8-Downloader-Go
 
-go 1.17
+go 1.23.0
+
+toolchain go1.24.2
 
 require (
-	github.com/grafov/m3u8 v0.12.0
+	github.com/grafov/m3u8 v0.12.1
 	github.com/greyh4t/hackpool v0.0.0-20231219120243-36876b128977
-	github.com/guonaihong/clop v0.2.11
+	github.com/guonaihong/clop v0.2.12
 )
 
 require (

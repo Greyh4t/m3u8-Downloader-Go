@@ -14,6 +14,7 @@ var (
 	jpgHeader = []byte{0xFF, 0xD8, 0xFF}
 	pngHeader = []byte{0x89, 0x50, 0x4e, 0x47}
 	gifHeader = []byte{0x47, 0x49, 0x46, 0x38}
+	bmpHeader = []byte{0x42, 0x4d}
 )
 
 func CheckHead(data []byte) error {
@@ -76,7 +77,7 @@ func TryFix(data []byte) []byte {
 		return data
 	}
 
-	if bytes.HasPrefix(data, jpgHeader) || bytes.HasPrefix(data, pngHeader) || bytes.HasPrefix(data, gifHeader) {
+	if bytes.HasPrefix(data, jpgHeader) || bytes.HasPrefix(data, pngHeader) || bytes.HasPrefix(data, gifHeader) || bytes.HasPrefix(data, bmpHeader) {
 		return Fix(data)
 	}
 
